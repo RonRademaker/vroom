@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     cmake \
     pkg-config \
     make \
+    # SSL/Certificate support
+    ca-certificates \
     # Core VROOM dependencies
     libasio-dev \
     libglpk-dev \
@@ -49,6 +51,15 @@ WORKDIR /app
 
 # Copy source code
 COPY . .
+
+# Configure git and manually download dependencies to avoid SSL issues
+RUN update-ca-certificates && \
+    # Download rapidjson
+    curl -k -L https://github.com/Tencent/rapidjson/archive/973dc9c06dcd3d035ebd039cfb9ea457721ec213.tar.gz | tar xz -C include/rapidjson --strip-components=1 && \
+    # Download cxxopts  
+    curl -k -L https://github.com/jarro2783/cxxopts/archive/eb787304d67ec22f7c3a184ee8b4c481d04357fd.tar.gz | tar xz -C include/cxxopts --strip-components=1 && \
+    # Download polylineencoder
+    curl -k -L https://github.com/vahancho/polylineencoder/archive/01823158e6d2f227c2a001d6739d0a4bdbc60f26.tar.gz | tar xz -C include/polylineencoder --strip-components=1
 
 # Build VROOM
 RUN cd src && make -j$(nproc)

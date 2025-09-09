@@ -1,8 +1,8 @@
 # Docker ignore file for VROOM
 # Exclude build artifacts and temporary files
 
-# Git files (but keep submodules)
-.git
+# Git files (but keep .git for submodule initialization)
+# .git
 
 # Build artifacts
 bin/
