@@ -126,20 +126,22 @@ struct Vehicle {
   }
 
   Duration effective_max_travel_time(Duration total_travel_time) const {
-    if (max_daily_travel_time == DEFAULT_MAX_TRAVEL_TIME) {
-      // No daily limit set, use regular max_travel_time
-      return max_travel_time;
+    Duration daily_limit = max_travel_time; // Default to regular max_travel_time
+    
+    if (max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME) {
+      // Apply the daily travel time formula
+      // Formula from problem: max_travel_time = (floor(total_travel_time/24) * max_daily_travel_time + 
+      //                                         min(max_daily_travel_time, total_travel_time % 24)) * 3600
+      // But internally everything is already scaled by DURATION_FACTOR, so we don't multiply by 3600
+      const Duration hours_per_day = 24 * 3600 * DURATION_FACTOR; // 24 hours in internal units
+      const Duration full_days = total_travel_time / hours_per_day;
+      const Duration remaining_time = total_travel_time % hours_per_day;
+      
+      daily_limit = full_days * max_daily_travel_time + std::min(max_daily_travel_time, remaining_time);
     }
     
-    // Apply the daily travel time formula
-    // Formula from problem: max_travel_time = (floor(total_travel_time/24) * max_daily_travel_time + 
-    //                                         min(max_daily_travel_time, total_travel_time % 24)) * 3600
-    // But internally everything is already scaled by DURATION_FACTOR, so we don't multiply by 3600
-    const Duration hours_per_day = 24 * 3600 * DURATION_FACTOR; // 24 hours in internal units
-    const Duration full_days = total_travel_time / hours_per_day;
-    const Duration remaining_time = total_travel_time % hours_per_day;
-    
-    return full_days * max_daily_travel_time + std::min(max_daily_travel_time, remaining_time);
+    // Return the minimum of the regular max_travel_time and the daily-computed limit
+    return std::min(max_travel_time, daily_limit);
   }
 
   bool ok_for_distance(Distance d) const {
