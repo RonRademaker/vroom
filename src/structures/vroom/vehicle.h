@@ -60,6 +60,7 @@ struct Vehicle {
   CostWrapper cost_wrapper;
   size_t max_tasks;
   const Duration max_travel_time;
+  const Duration max_daily_travel_time;
   const Distance max_distance;
   const bool has_break_max_load;
   std::vector<VehicleStep> steps;
@@ -81,6 +82,8 @@ struct Vehicle {
     double speed_factor = 1.,
     const std::optional<size_t>& max_tasks = std::optional<size_t>(),
     const std::optional<UserDuration>& max_travel_time =
+      std::optional<UserDuration>(),
+    const std::optional<UserDuration>& max_daily_travel_time =
       std::optional<UserDuration>(),
     const std::optional<UserDistance>& max_distance =
       std::optional<UserDistance>(),
@@ -119,7 +122,24 @@ struct Vehicle {
 
   bool ok_for_travel_time(Duration d) const {
     assert(0 <= d);
-    return d <= max_travel_time;
+    return d <= effective_max_travel_time(d);
+  }
+
+  Duration effective_max_travel_time(Duration total_travel_time) const {
+    if (max_daily_travel_time == DEFAULT_MAX_TRAVEL_TIME) {
+      // No daily limit set, use regular max_travel_time
+      return max_travel_time;
+    }
+    
+    // Apply the daily travel time formula
+    // Formula from problem: max_travel_time = (floor(total_travel_time/24) * max_daily_travel_time + 
+    //                                         min(max_daily_travel_time, total_travel_time % 24)) * 3600
+    // But internally everything is already scaled by DURATION_FACTOR, so we don't multiply by 3600
+    const Duration hours_per_day = 24 * 3600 * DURATION_FACTOR; // 24 hours in internal units
+    const Duration full_days = total_travel_time / hours_per_day;
+    const Duration remaining_time = total_travel_time % hours_per_day;
+    
+    return full_days * max_daily_travel_time + std::min(max_daily_travel_time, remaining_time);
   }
 
   bool ok_for_distance(Distance d) const {
@@ -129,7 +149,7 @@ struct Vehicle {
 
   bool ok_for_range_bounds(const Eval& e) const {
     assert(0 <= e.duration && 0 <= e.distance);
-    return e.duration <= max_travel_time && e.distance <= max_distance;
+    return e.duration <= effective_max_travel_time(e.duration) && e.distance <= max_distance;
   }
 
   bool has_range_bounds() const;
@@ -146,10 +166,12 @@ struct Vehicle {
                     rhs.capacity,
                     rhs.tw.length,
                     rhs.max_travel_time,
+                    rhs.max_daily_travel_time,
                     rhs.max_distance) < std::tie(lhs.max_tasks,
                                                  lhs.capacity,
                                                  lhs.tw.length,
                                                  lhs.max_travel_time,
+                                                 lhs.max_daily_travel_time,
                                                  lhs.max_distance);
   }
 };
