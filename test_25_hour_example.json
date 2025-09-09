@@ -1,0 +1,27 @@
+{
+  "vehicles": [
+    {
+      "id": 1,
+      "start_index": 0,
+      "end_index": 0,
+      "max_daily_travel_time": 36000,
+      "description": "Vehicle with 10-hour daily travel limit - 25-hour route test"
+    }
+  ],
+  "jobs": [
+    {
+      "id": 1,
+      "location_index": 1,
+      "service": 86400,
+      "description": "Job requiring 24 hours of service (simulating multi-day route)"
+    }
+  ],
+  "matrices": {
+    "car": {
+      "durations": [
+        [0, 39600],
+        [39600, 0]
+      ]
+    }
+  }
+}
