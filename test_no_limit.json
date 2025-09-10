@@ -1,0 +1,26 @@
+{
+  "vehicles": [
+    {
+      "id": 1,
+      "start_index": 0,
+      "end_index": 0,
+      "description": "Vehicle without daily travel limit"
+    }
+  ],
+  "jobs": [
+    {
+      "id": 1,
+      "location_index": 1,
+      "service": 0,
+      "description": "Simple job"
+    }
+  ],
+  "matrices": {
+    "car": {
+      "durations": [
+        [0, 1000],
+        [1000, 0]
+      ]
+    }
+  }
+}

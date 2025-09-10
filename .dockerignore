@@ -1,0 +1,54 @@
+# Docker ignore file for VROOM
+# Exclude build artifacts and temporary files
+
+# Git files (but keep .git for submodule initialization)
+# .git
+
+# Build artifacts
+bin/
+lib/
+*.o
+*.d
+*.a
+
+# Test artifacts
+test*.json
+*.log
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation builds
+docs/_build/
+docs/html/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Node modules if any
+node_modules/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Coverage reports
+*.gcov
+*.gcda
+*.gcno
+
+# Keep important files
+!README.md
+!docs/
+!*.md
+!include/

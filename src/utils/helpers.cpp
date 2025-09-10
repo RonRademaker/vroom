@@ -254,6 +254,11 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
 
     Duration ETA = 0;
     const auto& first_job = input.jobs[route.front()];
+    
+    // Daily travel time tracking for max_daily_travel_time constraint
+    Duration daily_travel_time = 0;
+    const Duration hours_per_day = 24 * 3600 * DURATION_FACTOR;
+    UserDuration total_route_waiting_time = 0;
 
     // Handle start.
     const auto start_loc = v.has_start() ? v.start.value() : first_job.location;
@@ -262,6 +267,7 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
       const auto next_leg = v.eval(v.start.value().index(), first_job.index());
       ETA += next_leg.duration;
       eval_sum += next_leg;
+      daily_travel_time += next_leg.duration;
     }
 
     // Handle jobs.
@@ -303,6 +309,7 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
         v.eval(input.jobs[route[r]].index(), input.jobs[route[r + 1]].index());
       ETA += next_leg.duration;
       eval_sum += next_leg;
+      daily_travel_time += next_leg.duration;
 
       const auto& current_job = input.jobs[route[r + 1]];
 
@@ -346,11 +353,43 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
       const auto next_leg = v.eval(last_job.index(), v.end.value().index());
       ETA += next_leg.duration;
       eval_sum += next_leg;
+      daily_travel_time += next_leg.duration;
     }
-    auto& last = steps.back();
-    last.duration = scale_to_user_duration(eval_sum.duration);
-    last.distance = eval_sum.distance;
-    last.arrival = scale_to_user_duration(ETA);
+    
+    // Calculate total waiting time needed for daily travel constraints
+    if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME) {
+      const Duration total_travel = eval_sum.duration;
+      if (total_travel > v.max_daily_travel_time) {
+        const Duration full_days = total_travel / v.max_daily_travel_time;
+        const Duration partial_day = total_travel % v.max_daily_travel_time;
+        
+        // Each full day requires (24h - daily_limit) of waiting
+        Duration waiting_periods = full_days;
+        if (partial_day > 0 && full_days > 0) {
+          waiting_periods += 1; 
+        }
+        
+        const Duration waiting_per_period = hours_per_day - v.max_daily_travel_time;
+        total_route_waiting_time = scale_to_user_duration(waiting_periods * waiting_per_period);
+        
+        // Update arrival time to include waiting time (but not on the END step)
+        auto& last = steps.back();
+        last.duration = scale_to_user_duration(eval_sum.duration);
+        last.distance = eval_sum.distance;
+        last.arrival = scale_to_user_duration(ETA + waiting_periods * waiting_per_period);
+        // Don't add waiting_time to END step to maintain departure = arrival
+      } else {
+        auto& last = steps.back();
+        last.duration = scale_to_user_duration(eval_sum.duration);
+        last.distance = eval_sum.distance;
+        last.arrival = scale_to_user_duration(ETA);
+      }
+    } else {
+      auto& last = steps.back();
+      last.duration = scale_to_user_duration(eval_sum.duration);
+      last.distance = eval_sum.distance;
+      last.arrival = scale_to_user_duration(ETA);
+    }
 
     assert(expected_delivery_ranks.empty());
     assert(v.ok_for_range_bounds(eval_sum));
@@ -361,11 +400,11 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     routes.emplace_back(v.id,
                         std::move(steps),
                         user_fixed_cost + scale_to_user_cost(eval_sum.cost),
-                        scale_to_user_duration(eval_sum.duration),
+                        scale_to_user_duration(eval_sum.duration),  // Keep original travel duration
                         eval_sum.distance,
                         scale_to_user_duration(setup),
                         scale_to_user_duration(service),
-                        0,
+                        total_route_waiting_time,  // Include waiting time from injected breaks
                         priority,
                         sum_deliveries,
                         sum_pickups,

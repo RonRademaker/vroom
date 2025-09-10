@@ -123,8 +123,11 @@ A `vehicle` object has the following properties:
 | [`speed_factor`] | a double value in the range `(0, 5]` used to scale **all** vehicle travel times (defaults to 1.), the respected precision is limited to two digits after the decimal point |
 | [`max_tasks`] | an integer defining the maximum number of tasks in a route for this vehicle |
 | [`max_travel_time`] | an integer defining the maximum travel time for this vehicle |
+| [`max_daily_travel_time`] | an integer defining the maximum travel time per 24-hour period for this vehicle |
 | [`max_distance`] | an integer defining the maximum distance for this vehicle |
 | [`steps`] | an array of `vehicle_step` objects describing a custom route for this vehicle |
+
+**Note on `max_daily_travel_time`**: This field limits the travel time per 24-hour period. For routes shorter than 24 hours, it behaves identically to `max_travel_time`. For routes longer than 24 hours, the effective limit is calculated as: `(floor(total_travel_time/24) * max_daily_travel_time + min(max_daily_travel_time, total_travel_time % 24))`. For example, if `max_daily_travel_time` is 10 hours and the total route takes 25 hours, the effective limit would be 11 hours (10 hours for the first 24-hour period plus 1 remaining hour).
 
 A `cost` object has the following properties:
 
