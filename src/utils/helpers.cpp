@@ -9,6 +9,7 @@ All rights reserved (see LICENSE).
 
 #include <algorithm>
 #include <chrono>
+#include <iostream>
 #include <numeric>
 #include <sstream>
 
@@ -255,11 +256,33 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     Duration ETA = 0;
     const auto& first_job = input.jobs[route.front()];
 
+    // Daily travel time tracking
+    Duration daily_travel_time = 0;
+    const Duration hours_per_day = 24 * 3600 * DURATION_FACTOR;
+    Duration current_day_start = 0; // Start at beginning of day for basic routing
+    Duration total_waiting_time = 0; // Track total waiting time for daily constraints
+
     // Handle start.
     const auto start_loc = v.has_start() ? v.start.value() : first_job.location;
     steps.emplace_back(STEP_TYPE::START, start_loc, current_load);
     if (v.has_start()) {
       const auto next_leg = v.eval(v.start.value().index(), first_job.index());
+      
+      // Handle daily travel time constraint for initial travel
+      if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME && next_leg.duration > 0) {
+        if (daily_travel_time + next_leg.duration > v.max_daily_travel_time) {
+          // Need to wait until next day
+          const Duration next_day_start = current_day_start + hours_per_day;
+          const Duration daily_wait = next_day_start - ETA;
+          total_waiting_time += daily_wait;
+          ETA = next_day_start;
+          current_day_start = next_day_start;
+          daily_travel_time = next_leg.duration;
+        } else {
+          daily_travel_time += next_leg.duration;
+        }
+      }
+      
       ETA += next_leg.duration;
       eval_sum += next_leg;
     }
@@ -301,6 +324,22 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
       assert(input.vehicle_ok_with_job(i, route[r + 1]));
       const auto next_leg =
         v.eval(input.jobs[route[r]].index(), input.jobs[route[r + 1]].index());
+      
+      // Handle daily travel time constraint for travel between jobs
+      if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME && next_leg.duration > 0) {
+        if (daily_travel_time + next_leg.duration > v.max_daily_travel_time) {
+          // Need to wait until next day
+          const Duration next_day_start = current_day_start + hours_per_day;
+          const Duration daily_wait = next_day_start - ETA;
+          total_waiting_time += daily_wait;
+          ETA = next_day_start;
+          current_day_start = next_day_start;
+          daily_travel_time = next_leg.duration;
+        } else {
+          daily_travel_time += next_leg.duration;
+        }
+      }
+      
       ETA += next_leg.duration;
       eval_sum += next_leg;
 
@@ -344,6 +383,23 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     steps.emplace_back(STEP_TYPE::END, end_loc, current_load);
     if (v.has_end()) {
       const auto next_leg = v.eval(last_job.index(), v.end.value().index());
+      
+      // Handle daily travel time constraint for final travel
+      Duration final_travel_wait = 0;
+      if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME && next_leg.duration > 0) {
+        if (daily_travel_time + next_leg.duration > v.max_daily_travel_time) {
+          // Need to wait until next day
+          const Duration next_day_start = current_day_start + hours_per_day;
+          final_travel_wait = next_day_start - ETA;
+          total_waiting_time += final_travel_wait;
+          ETA = next_day_start;
+          current_day_start = next_day_start;
+          daily_travel_time = next_leg.duration;
+        } else {
+          daily_travel_time += next_leg.duration;
+        }
+      }
+      
       ETA += next_leg.duration;
       eval_sum += next_leg;
     }
@@ -365,7 +421,7 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
                         eval_sum.distance,
                         scale_to_user_duration(setup),
                         scale_to_user_duration(service),
-                        0,
+                        scale_to_user_duration(total_waiting_time),
                         priority,
                         sum_deliveries,
                         sum_pickups,
@@ -553,7 +609,8 @@ Route format_route(const Input& input,
   // Daily travel time tracking
   Duration daily_travel_time = 0;
   const Duration hours_per_day = 24 * 3600 * DURATION_FACTOR;
-  Duration route_day_start = step_start;
+  // Track the start of the current 24-hour period
+  Duration current_day_start = (step_start / hours_per_day) * hours_per_day;
 
   // Go through the whole route again to set jobs/breaks ASAP given
   // the latest possible start time.
@@ -567,14 +624,14 @@ Route format_route(const Input& input,
   if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME && travel_time > 0) {
     if (daily_travel_time + travel_time > v.max_daily_travel_time) {
       // Need to wait until next day
-      const Duration time_until_next_day = route_day_start + hours_per_day - step_start;
-      const Duration daily_wait = time_until_next_day;
+      const Duration next_day_start = current_day_start + hours_per_day;
+      const Duration daily_wait = next_day_start - step_start;
       
       forward_wt += daily_wait;
-      step_start += daily_wait;
+      step_start = next_day_start;
       
       // Start new day
-      route_day_start = step_start;
+      current_day_start = next_day_start;
       daily_travel_time = travel_time;
     } else {
       daily_travel_time += travel_time;
@@ -709,14 +766,14 @@ Route format_route(const Input& input,
       if (r > 0) {
         if (daily_travel_time + travel_time > v.max_daily_travel_time) {
           // Need to wait until next day
-          const Duration time_until_next_day = route_day_start + hours_per_day - step_start;
-          daily_wait = time_until_next_day;
+          const Duration next_day_start = current_day_start + hours_per_day;
+          daily_wait = next_day_start - step_start;
           
           forward_wt += daily_wait;
-          step_start += daily_wait;
+          step_start = next_day_start;
           
           // Start new day
-          route_day_start = step_start;
+          current_day_start = next_day_start;
           daily_travel_time = travel_time;
         } else {
           daily_travel_time += travel_time;
@@ -865,14 +922,14 @@ Route format_route(const Input& input,
     if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME && travel_time > 0) {
       if (daily_travel_time + travel_time > v.max_daily_travel_time) {
         // Need to wait until next day
-        const Duration time_until_next_day = route_day_start + hours_per_day - step_start;
-        const Duration daily_wait = time_until_next_day;
+        const Duration next_day_start = current_day_start + hours_per_day;
+        const Duration daily_wait = next_day_start - step_start;
         
         forward_wt += daily_wait;
-        step_start += daily_wait;
+        step_start = next_day_start;
         
         // Start new day
-        route_day_start = step_start;
+        current_day_start = next_day_start;
         daily_travel_time = travel_time;
       } else {
         daily_travel_time += travel_time;
