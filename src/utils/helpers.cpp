@@ -9,6 +9,7 @@ All rights reserved (see LICENSE).
 
 #include <algorithm>
 #include <chrono>
+#include <iostream>
 #include <numeric>
 #include <sstream>
 
@@ -903,10 +904,15 @@ void apply_step_hook(const Input& input,
   
   // Check if we're about to add a step for job with id 1
   if (step_to_add.step_type == STEP_TYPE::JOB && step_to_add.id == 1) {
-    // Add a break with service time of 900 before this job
-    Break dynamic_break(999, {}, 900, "Dynamic break before job 1");
+    // Log that we're adding a break here
+    std::cout << "DEBUG: Adding dynamic break with service 900 before job " << step_to_add.id << std::endl;
     
-    // Add the break step with the current load (use same location as job)
+    // Add a break with service time of 900 before this job
+    std::vector<TimeWindow> break_tws = {TimeWindow()};  // Default: no time constraints
+    Break dynamic_break(999, break_tws, 900, "Dynamic break before job 1");
+    
+    // Add the break step with the current load
+    // Note: The break step doesn't change the load, so we use the same load as the job
     steps.emplace_back(dynamic_break, step_to_add.load);
   }
 }
