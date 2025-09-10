@@ -285,6 +285,7 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
           const Duration next_day_start = current_day_start + hours_per_day;
           const Duration daily_wait = next_day_start - ETA;
           total_waiting_time += daily_wait;
+          user_waiting_time += scale_to_user_duration(daily_wait);
           ETA = next_day_start;
           current_day_start = next_day_start;
           
@@ -484,11 +485,11 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     routes.emplace_back(v.id,
                         std::move(steps),
                         user_fixed_cost + scale_to_user_cost(eval_sum.cost),
-                        scale_to_user_duration(eval_sum.duration), // Pure travel time
+                        user_duration, // Use cumulative duration including waiting
                         eval_sum.distance,
                         scale_to_user_duration(setup),
                         scale_to_user_duration(service),
-                        user_waiting_time,
+                        0, // Waiting time is included in duration
                         priority,
                         sum_deliveries,
                         sum_pickups,
