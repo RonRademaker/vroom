@@ -286,10 +286,14 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     check_precedence(input, expected_delivery_ranks, route.front());
 #endif
 
-    steps.emplace_back(first_job,
-                       scale_to_user_duration(first_job_setup),
-                       scale_to_user_duration(first_job_service),
-                       current_load);
+    // Create the step to add and apply the hook
+    Step first_step(first_job,
+                    scale_to_user_duration(first_job_setup),
+                    scale_to_user_duration(first_job_service),
+                    current_load);
+    apply_step_hook(input, steps, first_step);
+    
+    steps.emplace_back(std::move(first_step));
     auto& first = steps.back();
     first.duration = scale_to_user_duration(ETA);
     first.distance = eval_sum.distance;
@@ -326,10 +330,14 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
       check_precedence(input, expected_delivery_ranks, route[r + 1]);
 #endif
 
-      steps.emplace_back(current_job,
-                         scale_to_user_duration(current_setup),
-                         scale_to_user_duration(current_service),
-                         current_load);
+      // Create the step to add and apply the hook
+      Step current_step(current_job,
+                        scale_to_user_duration(current_setup),
+                        scale_to_user_duration(current_service),
+                        current_load);
+      apply_step_hook(input, steps, current_step);
+      
+      steps.emplace_back(std::move(current_step));
       auto& current = steps.back();
       current.duration = scale_to_user_duration(eval_sum.duration);
       current.distance = eval_sum.distance;
@@ -673,10 +681,14 @@ Route format_route(const Input& input,
     check_precedence(input, expected_delivery_ranks, tw_r.route[r]);
 #endif
 
-    steps.emplace_back(current_job,
-                       scale_to_user_duration(current_setup),
-                       scale_to_user_duration(current_service),
-                       current_load);
+    // Create the step to add and apply the hook
+    Step current_step(current_job,
+                      scale_to_user_duration(current_setup),
+                      scale_to_user_duration(current_service),
+                      current_load);
+    apply_step_hook(input, steps, current_step);
+    
+    steps.emplace_back(std::move(current_step));
     auto& current = steps.back();
 
     step_start += travel_time;
@@ -881,6 +893,22 @@ Solution format_solution(const Input& input, const TWSolution& tw_routes) {
   return Solution(input.zero_amount(),
                   std::move(routes),
                   get_unassigned_jobs_from_ranks(input, unassigned_ranks));
+}
+
+void apply_step_hook(const Input& input, 
+                     std::vector<Step>& steps, 
+                     const Step& step_to_add) {
+  // Suppress unused parameter warning
+  (void)input;
+  
+  // Check if we're about to add a step for job with id 1
+  if (step_to_add.step_type == STEP_TYPE::JOB && step_to_add.id == 1) {
+    // Add a break with service time of 900 before this job
+    Break dynamic_break(999, {}, 900, "Dynamic break before job 1");
+    
+    // Add the break step with the current load (use same location as job)
+    steps.emplace_back(dynamic_break, step_to_add.load);
+  }
 }
 
 } // namespace vroom::utils
