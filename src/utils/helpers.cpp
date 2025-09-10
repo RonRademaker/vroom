@@ -260,7 +260,7 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     const Duration hours_per_day = 24 * 3600 * DURATION_FACTOR;
     Duration current_day_start = 0; // Start at beginning of day
     Duration total_waiting_time = 0; // Track total waiting time for daily constraints
-    UserDuration user_duration = 0; // Track cumulative duration for step timing
+    UserDuration user_waiting_time = 0; // Track user-scale waiting time
 
     // Handle start.
     const auto start_loc = v.has_start() ? v.start.value() : first_job.location;
@@ -338,6 +338,7 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
         v.eval(input.jobs[route[r]].index(), input.jobs[route[r + 1]].index());
       
       // Handle daily travel time constraint for travel between jobs
+      Duration step_waiting_time = 0;
       if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME && next_leg.duration > 0) {
         if (daily_travel_time + next_leg.duration > v.max_daily_travel_time) {
           // Can only travel part of the way before hitting daily limit
@@ -349,6 +350,7 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
           // Wait until next day
           const Duration next_day_start = current_day_start + hours_per_day;
           const Duration daily_wait = next_day_start - ETA;
+          step_waiting_time = daily_wait;
           total_waiting_time += daily_wait;
           ETA = next_day_start;
           current_day_start = next_day_start;
@@ -393,10 +395,16 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
                          scale_to_user_duration(current_service),
                          current_load);
       auto& current = steps.back();
+      current.arrival = scale_to_user_duration(ETA);
+      current.waiting_time = scale_to_user_duration(step_waiting_time);
+      user_waiting_time += current.waiting_time;
+      
+      // Calculate travel duration based on eval_sum (actual travel time)
       current.duration = scale_to_user_duration(eval_sum.duration);
       current.distance = eval_sum.distance;
-      current.arrival = scale_to_user_duration(ETA);
+      
       ETA += (current_setup + current_service);
+      user_previous_end = current.arrival + current.waiting_time + scale_to_user_duration(current_setup + current_service);
       unassigned_ranks.erase(route[r + 1]);
     }
 
@@ -404,6 +412,7 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     const auto& last_job = input.jobs[route.back()];
     const auto end_loc = v.has_end() ? v.end.value() : last_job.location;
     steps.emplace_back(STEP_TYPE::END, end_loc, current_load);
+    Duration final_waiting_time = 0;
     if (v.has_end()) {
       const auto next_leg = v.eval(last_job.index(), v.end.value().index());
       
@@ -419,7 +428,9 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
           // Wait until next day
           const Duration next_day_start = current_day_start + hours_per_day;
           const Duration daily_wait = next_day_start - ETA;
+          final_waiting_time = daily_wait;
           total_waiting_time += daily_wait;
+          user_waiting_time += scale_to_user_duration(daily_wait);
           ETA = next_day_start;
           current_day_start = next_day_start;
           
@@ -437,9 +448,12 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
       eval_sum += next_leg;
     }
     auto& last = steps.back();
-    last.duration = scale_to_user_duration(eval_sum.duration);
-    last.distance = eval_sum.distance;
     last.arrival = scale_to_user_duration(ETA);
+    last.waiting_time = 0; // End step doesn't have waiting time
+    last.distance = eval_sum.distance;
+    
+    // Set duration to total travel time (not including waiting/setup/service)
+    last.duration = scale_to_user_duration(eval_sum.duration);
 
     assert(expected_delivery_ranks.empty());
     assert(v.ok_for_range_bounds(eval_sum));
@@ -454,7 +468,7 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
                         eval_sum.distance,
                         scale_to_user_duration(setup),
                         scale_to_user_duration(service),
-                        scale_to_user_duration(total_waiting_time),
+                        user_waiting_time,
                         priority,
                         sum_deliveries,
                         sum_pickups,
