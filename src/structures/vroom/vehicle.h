@@ -151,7 +151,44 @@ struct Vehicle {
 
   bool ok_for_range_bounds(const Eval& e) const {
     assert(0 <= e.duration && 0 <= e.distance);
-    return e.duration <= effective_max_travel_time(e.duration) && e.distance <= max_distance;
+    
+    // For distance, straightforward check
+    if (e.distance > max_distance) {
+      return false;
+    }
+    
+    // For travel time with daily constraints, we need to be smarter
+    if (max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME) {
+      // Calculate minimum route duration needed to accommodate this travel time
+      // with daily travel time constraints by automatically including waiting periods
+      const Duration hours_per_day = 24 * 3600 * DURATION_FACTOR; // 24 hours in internal units
+      
+      // If travel time fits within one day, check against daily limit
+      if (e.duration <= max_daily_travel_time) {
+        return e.duration <= std::min(max_travel_time, max_daily_travel_time);
+      }
+      
+      // Calculate how many full days of travel we need
+      const Duration full_days_needed = e.duration / max_daily_travel_time;
+      const Duration remaining_travel = e.duration % max_daily_travel_time;
+      
+      // Calculate minimum route duration: span multiple days with waiting periods
+      Duration min_route_duration;
+      if (remaining_travel == 0) {
+        // Exact multiple of daily limit - need full_days_needed days
+        min_route_duration = full_days_needed * hours_per_day;
+      } else {
+        // Need full_days_needed + 1 days to accommodate remaining travel
+        min_route_duration = (full_days_needed + 1) * hours_per_day;
+      }
+      
+      // Check if travel time is within effective limit for this route duration
+      const Duration effective_limit = effective_max_travel_time(min_route_duration);
+      return e.duration <= std::min(max_travel_time, effective_limit);
+    }
+    
+    // No daily constraint, use regular logic
+    return e.duration <= effective_max_travel_time(e.duration);
   }
 
   bool has_range_bounds() const;

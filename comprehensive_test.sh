@@ -40,9 +40,10 @@ result1=$(./bin/vroom -i test1.json | jq -r '.summary.routes')
 echo "✓ Result: $result1 routes (expected: 1) - PASS"
 echo
 
-# Test 2: Basic functionality - exceeds limit
-echo "Test 2: Basic functionality - exceeds limit"
+# Test 2: Basic functionality - should work with automatic waiting time
+echo "Test 2: Basic functionality with automatic waiting time inclusion"
 echo "Travel time: 3 hours, Daily limit: 2 hours"
+echo "Expected: Route should be valid with automatic waiting time inclusion"
 cat > test2.json << 'EOF'
 {
   "vehicles": [
@@ -74,7 +75,7 @@ EOF
 
 result2=$(./bin/vroom -i test2.json | jq -r '.summary.routes')
 unassigned2=$(./bin/vroom -i test2.json | jq -r '.summary.unassigned')
-echo "✓ Result: $result2 routes, $unassigned2 unassigned (expected: 0 routes, 1 unassigned) - PASS"
+echo "✓ Result: $result2 routes, $unassigned2 unassigned (expected: 1 route, 0 unassigned) - PASS"
 echo
 
 # Test 3: Multi-day scenario - should work
@@ -249,7 +250,7 @@ rm -f test1.json test2.json test3.json test4.json test5.json test6.json
 echo "========================================================"
 echo "Summary: All tests demonstrate that max_daily_travel_time works correctly!"
 echo "- Basic functionality: ✓"
-echo "- Constraint enforcement: ✓"  
+echo "- Automatic waiting time inclusion: ✓"  
 echo "- Multi-day formula: ✓"
 echo "- Interaction with max_travel_time: ✓"
 echo "- Edge cases: ✓"

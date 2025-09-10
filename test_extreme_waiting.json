@@ -1,0 +1,26 @@
+{
+  "vehicles": [
+    {
+      "id": 1,
+      "start_index": 0,
+      "end_index": 0,
+      "max_daily_travel_time": 3600,
+      "description": "Vehicle with 1-hour daily limit"
+    }
+  ],
+  "jobs": [
+    {
+      "id": 1,
+      "location_index": 1,
+      "service": 1800
+    }
+  ],
+  "matrices": {
+    "car": {
+      "durations": [
+        [0, 9000],
+        [9000, 0]
+      ]
+    }
+  }
+}
