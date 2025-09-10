@@ -261,11 +261,14 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     Duration current_day_start = 0; // Start at beginning of day
     Duration total_waiting_time = 0; // Track total waiting time for daily constraints
     UserDuration user_waiting_time = 0; // Track user-scale waiting time
+    
+    // Time-window style duration tracking for consistent timing
+    UserDuration user_duration = 0; // Cumulative travel time (including waiting) as perceived by user
+    UserDuration user_previous_end = 0; // When the previous step truly ends
 
     // Handle start.
     const auto start_loc = v.has_start() ? v.start.value() : first_job.location;
     steps.emplace_back(STEP_TYPE::START, start_loc, current_load);
-    UserDuration user_previous_end = 0;
     if (v.has_start()) {
       const auto next_leg = v.eval(v.start.value().index(), first_job.index());
       
@@ -326,9 +329,17 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
                        scale_to_user_duration(first_job_service),
                        current_load);
     auto& first = steps.back();
-    first.duration = scale_to_user_duration(ETA);
-    first.distance = eval_sum.distance;
     first.arrival = scale_to_user_duration(ETA);
+    
+    // Calculate duration using time-window pattern
+    {
+      auto user_travel_time_first = first.arrival - user_previous_end;
+      user_duration += user_travel_time_first;
+      first.duration = user_duration;
+    }
+    
+    first.distance = eval_sum.distance;
+    user_previous_end = first.arrival + first.waiting_time + scale_to_user_duration(first_job_setup + first_job_service);
     ETA += (first_job_setup + first_job_service);
     unassigned_ranks.erase(route.front());
 
@@ -399,8 +410,13 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
       current.waiting_time = scale_to_user_duration(step_waiting_time);
       user_waiting_time += current.waiting_time;
       
-      // Calculate travel duration based on eval_sum (actual travel time)
-      current.duration = scale_to_user_duration(eval_sum.duration);
+      // Calculate duration using time-window pattern
+      {
+        auto user_travel_time_step = current.arrival - user_previous_end;
+        user_duration += user_travel_time_step;
+        current.duration = user_duration;
+      }
+      
       current.distance = eval_sum.distance;
       
       ETA += (current_setup + current_service);
@@ -449,11 +465,15 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     }
     auto& last = steps.back();
     last.arrival = scale_to_user_duration(ETA);
-    last.waiting_time = 0; // End step doesn't have waiting time
+    last.waiting_time = 0; // End step doesn't have waiting time - waiting is during travel
     last.distance = eval_sum.distance;
     
-    // Set duration to total travel time (not including waiting/setup/service)
-    last.duration = scale_to_user_duration(eval_sum.duration);
+    // Calculate duration using time-window pattern
+    {
+      auto user_travel_time_end = last.arrival - user_previous_end;
+      user_duration += user_travel_time_end;
+      last.duration = user_duration;
+    }
 
     assert(expected_delivery_ranks.empty());
     assert(v.ok_for_range_bounds(eval_sum));
@@ -464,7 +484,7 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     routes.emplace_back(v.id,
                         std::move(steps),
                         user_fixed_cost + scale_to_user_cost(eval_sum.cost),
-                        scale_to_user_duration(eval_sum.duration),
+                        scale_to_user_duration(eval_sum.duration), // Pure travel time
                         eval_sum.distance,
                         scale_to_user_duration(setup),
                         scale_to_user_duration(service),
