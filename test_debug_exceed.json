@@ -1,0 +1,21 @@
+{
+  "vehicles": [
+    {
+      "id": 1,
+      "start_index": 0,
+      "end_index": 0,
+      "max_daily_travel_time": 5400
+    }
+  ],
+  "jobs": [
+    { "id": 1, "location_index": 1, "service": 300 }
+  ],
+  "matrices": {
+    "car": {
+      "durations": [
+        [0, 4000],
+        [4000, 0]
+      ]
+    }
+  }
+}
