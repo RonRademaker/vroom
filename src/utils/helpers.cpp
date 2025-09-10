@@ -550,6 +550,11 @@ Route format_route(const Input& input,
   Amount sum_pickups(input.zero_amount());
   Amount sum_deliveries(input.zero_amount());
 
+  // Daily travel time tracking
+  Duration daily_travel_time = 0;
+  const Duration hours_per_day = 24 * 3600 * DURATION_FACTOR;
+  Duration route_day_start = step_start;
+
   // Go through the whole route again to set jobs/breaks ASAP given
   // the latest possible start time.
   Eval current_eval = v.has_start() ? v.eval(v.start.value().index(),
@@ -557,6 +562,24 @@ Route format_route(const Input& input,
                                     : Eval();
 
   Duration travel_time = current_eval.duration;
+
+  // Handle daily travel time limit for initial travel (start to first job)
+  if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME && travel_time > 0) {
+    if (daily_travel_time + travel_time > v.max_daily_travel_time) {
+      // Need to wait until next day
+      const Duration time_until_next_day = route_day_start + hours_per_day - step_start;
+      const Duration daily_wait = time_until_next_day;
+      
+      forward_wt += daily_wait;
+      step_start += daily_wait;
+      
+      // Start new day
+      route_day_start = step_start;
+      daily_travel_time = travel_time;
+    } else {
+      daily_travel_time += travel_time;
+    }
+  }
 
   for (std::size_t r = 0; r < tw_r.route.size(); ++r) {
     assert(input.vehicle_ok_with_job(tw_r.v_rank, tw_r.route[r]));
@@ -679,6 +702,28 @@ Route format_route(const Input& input,
                        current_load);
     auto& current = steps.back();
 
+    // Handle daily travel time constraint
+    Duration daily_wait = 0;
+    if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME && travel_time > 0) {
+      // For r == 0, daily limit was already handled above
+      if (r > 0) {
+        if (daily_travel_time + travel_time > v.max_daily_travel_time) {
+          // Need to wait until next day
+          const Duration time_until_next_day = route_day_start + hours_per_day - step_start;
+          daily_wait = time_until_next_day;
+          
+          forward_wt += daily_wait;
+          step_start += daily_wait;
+          
+          // Start new day
+          route_day_start = step_start;
+          daily_travel_time = travel_time;
+        } else {
+          daily_travel_time += travel_time;
+        }
+      }
+    }
+
     step_start += travel_time;
     assert(step_start <= tw_r.latest[r]);
 
@@ -691,17 +736,20 @@ Route format_route(const Input& input,
       });
     assert(j_tw != current_job.tws.end());
 
+    Duration time_window_wait = 0;
     if (step_start < j_tw->start) {
-      const Duration wt = j_tw->start - step_start;
-      forward_wt += wt;
-
-      // Recompute user-reported waiting time rather than using
-      // scale_to_user_duration(wt) to avoid rounding problems.
-      current.waiting_time =
-        scale_to_user_duration(j_tw->start) - current.arrival;
-      user_waiting_time += current.waiting_time;
-
+      time_window_wait = j_tw->start - step_start;
+      forward_wt += time_window_wait;
       step_start = j_tw->start;
+    }
+
+    // Apply waiting time (both daily and time window) to the step
+    if (daily_wait > 0 || time_window_wait > 0) {
+      // Recompute user-reported waiting time rather than using
+      // scale_to_user_duration to avoid rounding problems.
+      current.waiting_time =
+        scale_to_user_duration(step_start) - current.arrival;
+      user_waiting_time += current.waiting_time;
     }
 
     // Recompute cumulated durations in a consistent way as seen from
@@ -813,6 +861,24 @@ Route format_route(const Input& input,
   steps.emplace_back(STEP_TYPE::END, last_location.value(), current_load);
   auto& end_step = steps.back();
   if (v.has_end()) {
+    // Handle daily travel time constraint for final travel
+    if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME && travel_time > 0) {
+      if (daily_travel_time + travel_time > v.max_daily_travel_time) {
+        // Need to wait until next day
+        const Duration time_until_next_day = route_day_start + hours_per_day - step_start;
+        const Duration daily_wait = time_until_next_day;
+        
+        forward_wt += daily_wait;
+        step_start += daily_wait;
+        
+        // Start new day
+        route_day_start = step_start;
+        daily_travel_time = travel_time;
+      } else {
+        daily_travel_time += travel_time;
+      }
+    }
+    
     duration += travel_time;
     eval_sum += current_eval;
     step_start += travel_time;
