@@ -390,7 +390,7 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     routes.emplace_back(v.id,
                         std::move(steps),
                         user_fixed_cost + scale_to_user_cost(eval_sum.cost),
-                        scale_to_user_duration(eval_sum.duration) + total_waiting_time,
+                        scale_to_user_duration(eval_sum.duration),  // Keep travel duration separate
                         eval_sum.distance,
                         scale_to_user_duration(setup),
                         scale_to_user_duration(service),
