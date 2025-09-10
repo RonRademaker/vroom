@@ -357,13 +357,39 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     }
     
     // Calculate total waiting time needed for daily travel constraints
-    // For now, don't add waiting time to avoid timing consistency issues
-    // TODO: Implement proper break injection for waiting time display
-    UserDuration total_route_waiting_time = 0;
-    auto& last = steps.back();
-    last.duration = scale_to_user_duration(eval_sum.duration);
-    last.distance = eval_sum.distance;
-    last.arrival = scale_to_user_duration(ETA);
+    if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME) {
+      const Duration total_travel = eval_sum.duration;
+      if (total_travel > v.max_daily_travel_time) {
+        const Duration full_days = total_travel / v.max_daily_travel_time;
+        const Duration partial_day = total_travel % v.max_daily_travel_time;
+        
+        // Each full day requires (24h - daily_limit) of waiting
+        Duration waiting_periods = full_days;
+        if (partial_day > 0 && full_days > 0) {
+          waiting_periods += 1; 
+        }
+        
+        const Duration waiting_per_period = hours_per_day - v.max_daily_travel_time;
+        total_route_waiting_time = scale_to_user_duration(waiting_periods * waiting_per_period);
+        
+        // Update arrival time to include waiting time (but not on the END step)
+        auto& last = steps.back();
+        last.duration = scale_to_user_duration(eval_sum.duration);
+        last.distance = eval_sum.distance;
+        last.arrival = scale_to_user_duration(ETA + waiting_periods * waiting_per_period);
+        // Don't add waiting_time to END step to maintain departure = arrival
+      } else {
+        auto& last = steps.back();
+        last.duration = scale_to_user_duration(eval_sum.duration);
+        last.distance = eval_sum.distance;
+        last.arrival = scale_to_user_duration(ETA);
+      }
+    } else {
+      auto& last = steps.back();
+      last.duration = scale_to_user_duration(eval_sum.duration);
+      last.distance = eval_sum.distance;
+      last.arrival = scale_to_user_duration(ETA);
+    }
 
     assert(expected_delivery_ranks.empty());
     assert(v.ok_for_range_bounds(eval_sum));
