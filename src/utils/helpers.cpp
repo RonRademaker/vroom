@@ -254,7 +254,7 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
 
     Duration ETA = 0;
     const auto& first_job = input.jobs[route.front()];
-
+    
     // Daily travel time tracking for max_daily_travel_time constraint
     Duration daily_travel_time = 0;
     const Duration hours_per_day = 24 * 3600 * DURATION_FACTOR;
@@ -266,21 +266,9 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     steps.emplace_back(STEP_TYPE::START, start_loc, current_load);
     if (v.has_start()) {
       const auto next_leg = v.eval(v.start.value().index(), first_job.index());
-      
-      // Check if this travel would exceed daily limit
-      if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME && 
-          daily_travel_time + next_leg.duration > v.max_daily_travel_time) {
-        // Calculate waiting time until next day
-        const Duration time_until_next_day = hours_per_day - (ETA - current_day_start);
-        total_waiting_time += scale_to_user_duration(time_until_next_day);
-        ETA += time_until_next_day;
-        current_day_start = ETA;
-        daily_travel_time = 0;
-      }
-      
-      daily_travel_time += next_leg.duration;
       ETA += next_leg.duration;
       eval_sum += next_leg;
+      daily_travel_time += next_leg.duration;
     }
 
     // Handle jobs.
@@ -320,43 +308,9 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
       assert(input.vehicle_ok_with_job(i, route[r + 1]));
       const auto next_leg =
         v.eval(input.jobs[route[r]].index(), input.jobs[route[r + 1]].index());
-      
-      // Check if this travel would exceed daily limit
-      if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME && 
-          daily_travel_time + next_leg.duration > v.max_daily_travel_time) {
-        // First, travel as much as we can within the daily limit
-        const Duration remaining_daily_limit = v.max_daily_travel_time - daily_travel_time;
-        if (remaining_daily_limit > 0) {
-          ETA += remaining_daily_limit;
-          daily_travel_time += remaining_daily_limit;
-        }
-        
-        // Now inject a break for the remaining time until next day
-        const Duration time_until_next_day = hours_per_day - (ETA - current_day_start);
-        const UserDuration user_start = scale_to_user_duration(ETA);
-        const UserDuration user_end = scale_to_user_duration(ETA + time_until_next_day);
-        const Break rest_break(r + 1000, {TimeWindow(user_start, user_end)}, 
-                              scale_to_user_duration(time_until_next_day), 
-                              "Daily rest period");
-        steps.emplace_back(rest_break, current_load);
-        steps.back().arrival = user_start;
-        steps.back().duration = user_start; // Cumulative duration to this point
-        
-        total_waiting_time += scale_to_user_duration(time_until_next_day);
-        ETA += time_until_next_day;
-        current_day_start = ETA;
-        daily_travel_time = 0;
-        
-        // Complete the remaining travel on the new day
-        const Duration remaining_travel = next_leg.duration - remaining_daily_limit;
-        daily_travel_time += remaining_travel;
-        ETA += remaining_travel;
-      } else {
-        daily_travel_time += next_leg.duration;
-        ETA += next_leg.duration;
-      }
-      
+      ETA += next_leg.duration;
       eval_sum += next_leg;
+      daily_travel_time += next_leg.duration;
 
       const auto& current_job = input.jobs[route[r + 1]];
 
@@ -395,31 +349,37 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     // Handle end.
     const auto& last_job = input.jobs[route.back()];
     const auto end_loc = v.has_end() ? v.end.value() : last_job.location;
-    
+    steps.emplace_back(STEP_TYPE::END, end_loc, current_load);
     if (v.has_end()) {
       const auto next_leg = v.eval(last_job.index(), v.end.value().index());
-      
-      // Check if this travel would exceed daily limit
-      if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME && 
-          daily_travel_time + next_leg.duration > v.max_daily_travel_time) {
-        // Calculate waiting time until next day
-        const Duration time_until_next_day = hours_per_day - (ETA - current_day_start);
-        total_waiting_time += scale_to_user_duration(time_until_next_day);
-        ETA += time_until_next_day;
-        current_day_start = ETA;
-        daily_travel_time = 0;
-      }
-      
-      daily_travel_time += next_leg.duration;
       ETA += next_leg.duration;
       eval_sum += next_leg;
+      daily_travel_time += next_leg.duration;
     }
     
-    steps.emplace_back(STEP_TYPE::END, end_loc, current_load);
+    // Now calculate total waiting time needed for daily travel constraints
+    if (v.max_daily_travel_time != DEFAULT_MAX_TRAVEL_TIME) {
+      // Calculate how much waiting time is needed for multi-day routes
+      const Duration total_travel = eval_sum.duration;
+      if (total_travel > v.max_daily_travel_time) {
+        const Duration full_days = total_travel / v.max_daily_travel_time;
+        const Duration partial_day = total_travel % v.max_daily_travel_time;
+        
+        // Each full day requires (24h - daily_limit) of waiting
+        // Plus one wait period if there's a partial day > 0
+        Duration waiting_periods = full_days;
+        if (partial_day > 0 && full_days > 0) {
+          waiting_periods += 1; // Additional wait before the partial day
+        }
+        
+        const Duration waiting_per_period = hours_per_day - v.max_daily_travel_time;
+        total_waiting_time = scale_to_user_duration(waiting_periods * waiting_per_period);
+      }
+    }
     auto& last = steps.back();
     last.duration = scale_to_user_duration(eval_sum.duration);
     last.distance = eval_sum.distance;
-    last.arrival = scale_to_user_duration(ETA);
+    last.arrival = scale_to_user_duration(ETA) + total_waiting_time;
 
     assert(expected_delivery_ranks.empty());
     assert(v.ok_for_range_bounds(eval_sum));
@@ -430,11 +390,11 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     routes.emplace_back(v.id,
                         std::move(steps),
                         user_fixed_cost + scale_to_user_cost(eval_sum.cost),
-                        scale_to_user_duration(eval_sum.duration),
+                        scale_to_user_duration(eval_sum.duration) + total_waiting_time,
                         eval_sum.distance,
                         scale_to_user_duration(setup),
                         scale_to_user_duration(service),
-                        total_waiting_time,  // Include waiting time from breaks
+                        total_waiting_time,  // Include calculated waiting time
                         priority,
                         sum_deliveries,
                         sum_pickups,
