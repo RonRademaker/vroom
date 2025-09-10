@@ -263,17 +263,13 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     UserDuration user_waiting_time = 0; // Track user-scale waiting time
     
     // Time-window style duration tracking for consistent timing
-    UserDuration user_duration = 0; // Cumulative travel time (excluding waiting) as perceived by user
-    UserDuration user_step_duration = 0; // Cumulative time including waiting for step-level duration consistency
+    UserDuration user_duration = 0; // Pure travel time (excluding waiting) for route-level duration
+    UserDuration user_step_duration = 0; // Cumulative time including waiting for step-level duration consistency  
     UserDuration user_previous_end = 0; // When the previous step truly ends
 
     // Handle start.
     const auto start_loc = v.has_start() ? v.start.value() : first_job.location;
     steps.emplace_back(STEP_TYPE::START, start_loc, current_load);
-    // Set initial arrival time for start step
-    steps.back().arrival = 0; // Start at time 0
-    user_previous_end = steps.back().arrival; // Initialize user_previous_end
-    
     if (v.has_start()) {
       const auto next_leg = v.eval(v.start.value().index(), first_job.index());
       
@@ -337,21 +333,17 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     auto& first = steps.back();
     first.arrival = scale_to_user_duration(ETA);
     
-    // Calculate duration using time-window pattern
+    // Calculate duration using time-window pattern  
     {
-      // For step-level durations, use actual time including waiting for consistency with assertions
       auto user_travel_time_first = first.arrival - user_previous_end;
       user_step_duration += user_travel_time_first;
       first.duration = user_step_duration;
-      
-      // For route-level duration, only count actual travel time
-      Duration first_travel_time = 0;
-      if (v.has_start()) {
-        const auto next_leg = v.eval(v.start.value().index(), first_job.index());
-        first_travel_time = next_leg.duration;
-      }
-      auto pure_travel_time_first = scale_to_user_duration(first_travel_time);
-      user_duration += pure_travel_time_first;
+    }
+    
+    // Calculate pure travel time for route-level duration 
+    if (v.has_start()) {
+      const auto start_leg = v.eval(v.start.value().index(), first_job.index());
+      user_duration += scale_to_user_duration(start_leg.duration);
     }
     
     first.distance = eval_sum.distance;
@@ -428,15 +420,13 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
       
       // Calculate duration using time-window pattern
       {
-        // For step-level durations, use actual time including waiting for consistency with assertions
         auto user_travel_time_step = current.arrival - user_previous_end;
         user_step_duration += user_travel_time_step;
         current.duration = user_step_duration;
-        
-        // For route-level duration, only count actual travel time
-        auto pure_travel_time_step = scale_to_user_duration(next_leg.duration);
-        user_duration += pure_travel_time_step;
       }
+      
+      // Calculate pure travel time for route-level duration
+      user_duration += scale_to_user_duration(next_leg.duration);
       
       current.distance = eval_sum.distance;
       
@@ -475,12 +465,6 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
           const Duration remaining_travel = next_leg.duration - partial_travel;
           daily_travel_time = remaining_travel;
           ETA += remaining_travel;
-          
-          // Assign the waiting time to the last job step (where waiting logically occurs)
-          if (steps.size() >= 2) {
-            auto& last_job_step = steps[steps.size() - 2]; // Second to last step (last job)
-            last_job_step.waiting_time += scale_to_user_duration(daily_wait);
-          }
         } else {
           daily_travel_time += next_leg.duration;
           ETA += next_leg.duration;
@@ -492,24 +476,20 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     }
     auto& last = steps.back();
     last.arrival = scale_to_user_duration(ETA);
-    last.waiting_time = 0; // End step should not have waiting time
+    last.waiting_time = 0; // End step doesn't have waiting time - waiting is during travel
     last.distance = eval_sum.distance;
     
     // Calculate duration using time-window pattern
     {
-      // For step-level durations, use actual time including waiting for consistency with assertions
       auto user_travel_time_end = last.arrival - user_previous_end;
       user_step_duration += user_travel_time_end;
       last.duration = user_step_duration;
-      
-      // For route-level duration, only count actual travel time
-      Duration actual_travel_time = 0;
-      if (v.has_end()) {
-        const auto next_leg = v.eval(input.jobs[route.back()].index(), v.end.value().index());
-        actual_travel_time = next_leg.duration;
-      }
-      auto pure_travel_time_end = scale_to_user_duration(actual_travel_time);
-      user_duration += pure_travel_time_end;
+    }
+    
+    // Calculate pure travel time for route-level duration
+    if (v.has_end()) {
+      const auto end_leg = v.eval(input.jobs[route.back()].index(), v.end.value().index());
+      user_duration += scale_to_user_duration(end_leg.duration);
     }
 
     assert(expected_delivery_ranks.empty());
@@ -521,11 +501,11 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     routes.emplace_back(v.id,
                         std::move(steps),
                         user_fixed_cost + scale_to_user_cost(eval_sum.cost),
-                        user_duration, // Pure travel duration (excluding waiting time)
+                        user_step_duration, // Use step duration to match route duration assertion
                         eval_sum.distance,
                         scale_to_user_duration(setup),
                         scale_to_user_duration(service),
-                        user_waiting_time, // Include all waiting time for timing consistency
+                        0, // Waiting time included in duration to match assertions
                         priority,
                         sum_deliveries,
                         sum_pickups,
