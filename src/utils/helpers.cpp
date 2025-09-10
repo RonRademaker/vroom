@@ -107,6 +107,18 @@ Priority priority_sum_for_route(const Input& input,
                          });
 }
 
+// Helper function to create a daily limit break
+Break create_daily_limit_break(Id break_id, Duration service_duration) {
+  // Create a break with a time window covering the entire day
+  std::vector<TimeWindow> tws;
+  tws.emplace_back(0, std::numeric_limits<Duration>::max());
+  
+  return Break(break_id, 
+               tws, 
+               scale_to_user_duration(service_duration),
+               "Daily travel limit break");
+}
+
 Eval route_eval_for_vehicle(const Input& input,
                             Index v_rank,
                             const std::vector<Index>::const_iterator first_job,
@@ -287,6 +299,15 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
           const Duration daily_wait = next_day_start - ETA;
           total_waiting_time += daily_wait;
           user_waiting_time += scale_to_user_duration(daily_wait);
+          
+          // Inject daily limit break to represent the waiting time
+          Break daily_break = create_daily_limit_break(1000000, daily_wait);
+          steps.emplace_back(daily_break, current_load);
+          auto& break_step = steps.back();
+          break_step.arrival = scale_to_user_duration(ETA);
+          break_step.waiting_time = scale_to_user_duration(daily_wait);
+          break_step.duration = scale_to_user_duration(ETA + daily_wait);
+          
           ETA = next_day_start;
           current_day_start = next_day_start;
           
@@ -371,6 +392,15 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
           const Duration daily_wait = next_day_start - ETA;
           step_waiting_time = daily_wait;
           total_waiting_time += daily_wait;
+          
+          // Inject daily limit break to represent the waiting time
+          Break daily_break = create_daily_limit_break(1000001, daily_wait);
+          steps.emplace_back(daily_break, current_load);
+          auto& break_step = steps.back();
+          break_step.arrival = scale_to_user_duration(ETA);
+          break_step.waiting_time = scale_to_user_duration(daily_wait);
+          break_step.duration = scale_to_user_duration(ETA + daily_wait);
+          
           ETA = next_day_start;
           current_day_start = next_day_start;
           
@@ -438,8 +468,9 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     // Handle end.
     const auto& last_job = input.jobs[route.back()];
     const auto end_loc = v.has_end() ? v.end.value() : last_job.location;
-    steps.emplace_back(STEP_TYPE::END, end_loc, current_load);
     Duration final_waiting_time = 0;
+    
+    // Check for daily travel constraint before final travel - inject break if needed
     if (v.has_end()) {
       const auto next_leg = v.eval(last_job.index(), v.end.value().index());
       
@@ -458,6 +489,15 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
           final_waiting_time = daily_wait;
           total_waiting_time += daily_wait;
           user_waiting_time += scale_to_user_duration(daily_wait);
+          
+          // Inject daily limit break to represent the waiting time  
+          Break daily_break = create_daily_limit_break(1000002, daily_wait);
+          steps.emplace_back(daily_break, current_load);
+          auto& break_step = steps.back();
+          break_step.arrival = scale_to_user_duration(ETA);
+          break_step.waiting_time = scale_to_user_duration(daily_wait);
+          break_step.duration = scale_to_user_duration(ETA + daily_wait);
+          
           ETA = next_day_start;
           current_day_start = next_day_start;
           
@@ -474,6 +514,9 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
       }
       eval_sum += next_leg;
     }
+    
+    // Add END step after all breaks
+    steps.emplace_back(STEP_TYPE::END, end_loc, current_load);
     auto& last = steps.back();
     last.arrival = scale_to_user_duration(ETA);
     last.waiting_time = 0; // End step doesn't have waiting time - waiting is during travel
