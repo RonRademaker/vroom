@@ -287,13 +287,10 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
     check_precedence(input, expected_delivery_ranks, route.front());
 #endif
 
-    // Create the step to add and apply the hook
     Step first_step(first_job,
                     scale_to_user_duration(first_job_setup),
                     scale_to_user_duration(first_job_service),
                     current_load);
-    apply_step_hook(input, steps, first_step);
-    
     steps.emplace_back(std::move(first_step));
     auto& first = steps.back();
     first.duration = scale_to_user_duration(ETA);
@@ -331,13 +328,10 @@ Solution format_solution(const Input& input, const RawSolution& raw_routes) {
       check_precedence(input, expected_delivery_ranks, route[r + 1]);
 #endif
 
-      // Create the step to add and apply the hook
       Step current_step(current_job,
                         scale_to_user_duration(current_setup),
                         scale_to_user_duration(current_service),
                         current_load);
-      apply_step_hook(input, steps, current_step);
-      
       steps.emplace_back(std::move(current_step));
       auto& current = steps.back();
       current.duration = scale_to_user_duration(eval_sum.duration);
@@ -682,13 +676,10 @@ Route format_route(const Input& input,
     check_precedence(input, expected_delivery_ranks, tw_r.route[r]);
 #endif
 
-    // Create the step to add and apply the hook
     Step current_step(current_job,
                       scale_to_user_duration(current_setup),
                       scale_to_user_duration(current_service),
                       current_load);
-    apply_step_hook(input, steps, current_step);
-    
     steps.emplace_back(std::move(current_step));
     auto& current = steps.back();
 
@@ -914,6 +905,24 @@ void apply_step_hook(const Input& input,
     // Add the break step with the current load
     // Note: The break step doesn't change the load, so we use the same load as the job
     steps.emplace_back(dynamic_break, step_to_add.load);
+  }
+}
+
+void apply_route_construction_hook(const Input& input, 
+                                   RawRoute& route, 
+                                   Index job_rank, 
+                                   Index rank) {
+  // Check if we're about to add job with id 1
+  if (input.jobs[job_rank].id == 1) {
+    std::cout << "DEBUG: Route construction hook triggered for job " << input.jobs[job_rank].id << std::endl;
+    
+    // For now, just add a placeholder job to simulate a break
+    // In a real implementation, we would need to:
+    // 1. Create a proper break representation in the route
+    // 2. Update TWRoute's break tracking if needed
+    // 3. Ensure breaks are handled correctly by optimization algorithms
+    
+    // TODO: Implement actual break insertion during route construction
   }
 }
 

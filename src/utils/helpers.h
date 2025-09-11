@@ -504,7 +504,13 @@ Route format_route(const Input& input,
 
 Solution format_solution(const Input& input, const TWSolution& tw_routes);
 
-// Hook function that can modify a route before adding a step
+// Hook function that can modify a route during construction
+void apply_route_construction_hook(const Input& input, 
+                                   RawRoute& route, 
+                                   Index job_rank, 
+                                   Index rank);
+
+// Hook function that can modify a route before adding a step  
 void apply_step_hook(const Input& input, 
                      std::vector<Step>& steps, 
                      const Step& step_to_add);
