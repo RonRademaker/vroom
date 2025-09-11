@@ -124,6 +124,7 @@ inline void seed_route(const Input& input,
 
   if (init_ok) {
     if (input.jobs[best_job_rank].type == JOB_TYPE::SINGLE) {
+      utils::apply_route_construction_hook(input, route, best_job_rank, 0);
       route.add(input, best_job_rank, 0);
       unassigned.erase(best_job_rank);
     }
@@ -425,6 +426,7 @@ inline Eval fill_route(const Input& input,
     if (best_cost < std::numeric_limits<double>::max()) {
       const auto& best_job = input.jobs[best_job_rank];
       if (best_job.type == JOB_TYPE::SINGLE) {
+        utils::apply_route_construction_hook(input, route, best_job_rank, best_r);
         route.add(input, best_job_rank, best_r);
         unassigned.erase(best_job_rank);
         keep_going = true;
